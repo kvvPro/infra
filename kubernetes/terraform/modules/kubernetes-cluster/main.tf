@@ -69,21 +69,10 @@ resource "vsphere_virtual_machine" "worker" {
     }
   }
 
-  # # First delete all files from /var/lib/cloud/ to ensure clear init of cloud-init
-  # provisioner "local-exec" {
-  #   command = "rm -r -f -d /var/lib/cloud/* && sed -i \"$ a\\\\\ndisable_vmware_customization: false\" /etc/cloud/cloud.cfg && sed -i \"s/network: {config: disabled}/#network: {config: disabled}/\" /etc/cloud/cloud.cfg.d/subiquity-disable-cloudinit-networking.cfg && cloud-init clean --seed"
-  #   # connection {
-  #   #   type = "ssh"
-  #   #   user = var.root_ssh_user
-  #   #   password = var.root_ssh_password
-  #   #   host     = each.value.ip
-  #   # }
-  # }
-
   # Ansible requires Python to be installed on the remote machines (as well as the local machine).
   # and install sshpass
   provisioner "remote-exec" {
-    inline = ["sudo apt-get update && sudo apt-get -qq install python3 -y && sudo apt install -y sshpass"]
+    inline = [file("${path.module}/init.sh")]
 
     connection {
       type     = "ssh"
@@ -185,27 +174,10 @@ resource "vsphere_virtual_machine" "master" {
     }
   }
 
-  # First delete all files from /var/lib/cloud/ to ensure clear init of cloud-init
-  provisioner "local-exec" {
-    command = "rm -r -f -d /var/lib/cloud/*"
-  }
-
-  provisioner "local-exec" {
-    command = "echo \"\ndisable_vmware_customization: false\" >> /etc/cloud/cloud.cfg"
-  }
-
-  provisioner "local-exec" {
-    command = "sed -i \"s/network: {config: disabled}/#network: {config: disabled}/\" /etc/cloud/cloud.cfg.d/subiquity-disable-cloudinit-networking.cfg"
-  }
-
-  provisioner "local-exec" {
-    command = "cloud-init clean --seed"
-  }
-
   # Ansible requires Python to be installed on the remote machines (as well as the local machine).
   # and install sshpass
   provisioner "remote-exec" {
-    inline = ["sudo apt-get update && sudo apt-get -qq install python3 -y && sudo apt install -y sshpass"]
+    inline = [file("${path.module}/init.sh")]
 
     connection {
       type     = "ssh"
