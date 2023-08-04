@@ -1,0 +1,102 @@
+```yaml
+---
+- name: Install Kubernetes cluster using Kubeadm
+  hosts: kubernetes-cluster
+  become: true
+  tasks:
+    - name: Install Docker
+      apt:
+        name: docker.io
+        update_cache: yes
+
+    - name: Install apt-transport-https
+      apt:
+        name: apt-transport-https
+
+    - name: Add Kubernetes apt-key
+      apt_key:
+        url: "https://packages.cloud.google.com/apt/doc/apt-key.gpg"
+        state: present
+
+    - name: Add Kubernetes apt repository
+      apt_repository:
+        repo: "deb https://apt.kubernetes.io/ kubernetes-xenial main"
+        state: present
+
+    - name: Install kubelet, kubeadm, kubectl
+      apt:
+        name: "{{ item }}"
+        state: present
+        update_cache: yes
+      loop:
+        - kubelet
+        - kubeadm
+        - kubectl
+
+    - name: Disable swap
+      sysctl:
+        name: vm.swappiness
+        value: 0
+        sysctl_set: yes
+        state: present
+
+    - name: Update sysctl settings for Kubernetes networking
+      sysctl:
+        name: "{{ item }}"
+        value: "{{ item_value }}"
+        sysctl_set: yes
+        state: present
+      with_dict:
+        net.bridge.bridge-nf-call-ip6tables: 1
+        net.bridge.bridge-nf-call-iptables: 1
+        net.bridge.bridge-nf-call-arptables: 1
+
+    - name: Initialize Kubernetes cluster
+      shell: kubeadm init --pod-network-cidr={{ kube_network_cidr }}
+      register: kubeadm_init
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Save Kubernetes join command
+      when: kubeadm_init|changed and kubeadm_init|success
+      lineinfile:
+        dest: /home/{{ ansible_user }}/.kube/kube_adm_join_cmd
+        line: "{{ kubeadm_init.stdout_lines[-3] }}"
+
+    - name: Copy Kubernetes admin.conf
+      when: kubeadm_init|changed and kubeadm_init|success
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/{{ ansible_user }}/.kube/config
+        remote_src: true
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: 0600
+
+    - name: Deploy Calico network
+      shell: kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+      when: kubeadm_init|changed and kubeadm_init|success
+
+    - name: Enable kubelet service
+      service:
+        name: "kubelet"
+        enabled: yes
+        state: started
+
+    - name: Wait for Kubernetes cluster initialization
+      command: kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes
+      retries: 10
+      delay: 10
+      register: kubectl_command
+      changed_when: false
+      until: kubectl_command.stdout.find('Ready,SchedulingDisabled,') != -1
+
+    - name: Copy Kubernetes admin.conf to user's .kube directory
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/{{ ansible_user }}/.kube/admin.conf
+        remote_src: true
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: 0600
+```
